@@ -3,7 +3,7 @@
   var WD = ['일', '월', '화', '수', '목', '금', '토'];
   var TABS = [['today', '오늘'], ['log', '기록'], ['chart', '차트'], ['set', '설정']];
   var S = null;                       // persisted state
-  var U = { tab: 'today', side: 'buy', armed: '', msg: {}, chartSel: {} };
+  var U = { tab: 'today', side: 'buy', armed: '', msg: {}, chartSel: {}, quote: {}, close: {} };   // quote/close: fetch status, never saved
   var store = { status: 'local' };
   var LS_KEY = 'vr-ledger-v1';         // old app name; kept so saved records still load
   var $app = document.getElementById('app'), $tabs = document.getElementById('tabs');
@@ -96,10 +96,10 @@
     var n = before ? 1 : cycleIndexFor(s.startDate, today);
     var rows = buildLedger(S, n + 1);          // includes next cycle preview
     var cur = rows[n - 1], next = rows[n];
-    var price = S.prices[n];
+    var price = S.demo ? S.prices[n] : (S.quote && S.quote.price > 0 ? S.quote.price : undefined);   // current cycle: live quote (demo keeps its example price)
     var held = cur.sharesEnd;                  // shares held right now
     var evalNow = price > 0 ? held * price : NaN;
-    return { s: s, today: today, before: before, n: n, rows: rows, cur: cur, next: next, price: price, held: held, evalNow: evalNow, zone: isFinite(evalNow) ? zoneFor(evalNow, cur.min, cur.max) : null };
+    return { s: s, today: today, before: before, n: n, rows: rows, cur: cur, next: next, price: price, held: held, priceOf: function (k) { return k === n ? price : S.prices[k]; }, evalNow: evalNow, zone: isFinite(evalNow) ? zoneFor(evalNow, cur.min, cur.max) : null };
   }
   function tasksFor(m) {
     var st = m.cur.start, mode = m.s.mode, out = [];
@@ -183,6 +183,18 @@
     if (!S.demo) return '';
     return '<div class="banner"><p><b>예시 데이터</b>입니다. 숫자는 가상이며 저장되지 않습니다. 내 설정으로 시작하면 이 화면이 내 기록으로 바뀝니다.</p><button class="btn primary small" data-act="tab" data-v="set">내 설정으로 시작</button></div>';
   }
+  var REASON = { nokey: '설정에서 Twelve Data 키를 넣으면 자동으로 채워집니다', auth: 'Twelve Data 키를 확인하세요', limit: '요청이 많아요. 잠시 후 다시 시도하세요', offline: '오프라인입니다. 연결되면 다시 조회합니다', norepo: '가격을 가져오지 못했습니다', error: '가격을 가져오지 못했습니다' };
+  function hhmm(ms) { var d = new Date(ms); return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function priceField(m, tk) {
+    var q = S.quote, uq = U.quote || {}, busy = !!uq.busy;
+    var btn = '<button class="btn small refresh" data-act="refreshquote" aria-label="현재가 다시 조회"' + (busy ? ' disabled' : '') + '>' + (busy ? '조회 중…' : '↻') + '</button>';
+    if (S.demo || uq.reason) {
+      return '<div class="field"><label for="px">' + esc(tk) + ' 현재가 (달러)' + (!S.demo && q && q.source === 'manual' ? ' <span class="chip hold">직접 입력</span>' : '') + '</label><div class="pxline"><input id="px" class="num" inputmode="decimal" value="' + (m.price > 0 ? m.price : '') + '" data-act="price" placeholder="예: 62.40">' + (S.demo ? '' : btn) + '</div>'
+        + (S.demo ? '' : '<span class="hint">' + esc(REASON[uq.reason] || REASON.error) + '</span>') + '</div>';
+    }
+    var line = q && q.price > 0 ? esc(tk) + ' <b class="num">' + money2(q.price) + '</b>' + (q.at ? '<small class="asof">' + hhmm(q.at) + ' 기준</small>' : '') + (q.source === 'manual' ? ' <span class="chip hold">직접 입력</span>' : '') : (busy ? esc(tk) + ' 현재가를 가져오는 중입니다' : esc(tk) + ' 현재가 없음');
+    return '<div class="field"><label>현재가 (달러)</label><div class="pxline"><span class="pxtext">' + line + '</span>' + btn + '</div></div>';
+  }
   function viewToday() {
     var m = model(), s = m.s, c = m.cur, nx = m.next, today = m.today, tk = s.ticker || 'TQQQ';
     var tasks = tasksFor(m), inWin = !m.before && today >= addDays(c.start, 12);
@@ -203,7 +215,7 @@
       + '<div class="stat"><span class="label">최대밴드 +' + s.bandHigh + '%</span><span class="v">' + money(c.max) + '</span></div></div>';
     out += '<div><div class="gauge"><div class="track"><div class="inband" style="left:' + pct(c.min).toFixed(1) + '%;right:' + (100 - pct(c.max)).toFixed(1) + '%"></div><div class="sellzone" style="left:' + pct(c.max).toFixed(1) + '%"></div></div><div class="vtick" style="left:' + pct(c.V).toFixed(1) + '%"></div>' + (ev != null ? '<div class="mark" style="left:' + pct(ev).toFixed(1) + '%"></div>' : '') + '</div>'
       + '<div class="gauge-labels"><span>매수 ←</span><span>V</span><span>→ 매도</span></div></div>';
-    out += '<div class="grid2"><div class="field"><label for="px">' + esc(tk) + ' 현재가 (달러)</label><input id="px" class="num" inputmode="decimal" value="' + (m.price > 0 ? m.price : '') + '" data-act="price" placeholder="예: 62.40"></div>'
+    out += '<div class="grid2">' + priceField(m, tk)
       + '<div class="stat"><span class="label">보유 ' + int(m.held) + '주 · 평가금</span><span class="v big">' + (ev != null ? money(ev) : '-') + '</span><span class="s">' + zoneChip + '</span></div></div>';
     out += '<div><div class="label" style="display:flex;justify-content:space-between"><span>Pool 사용한도 ' + s.poolLimit + '%</span><span class="num">' + money2(used) + ' / ' + money2(budget) + '</span></div><div class="bar" role="img" aria-label="Pool 사용한도 사용률 ' + usedPct.toFixed(0) + '%"><i style="width:' + usedPct.toFixed(1) + '%"></i></div></div>';
     out += '<div class="grid2"><div class="stat"><span class="label">현재 Pool</span><span class="v">' + money2(c.poolEnd) + '</span></div><div class="stat"><span class="label">이번 사이클 매수 / 매도</span><span class="v">' + int(c.buyQty) + ' / ' + int(c.sellQty) + '주</span></div></div></section>';
@@ -239,11 +251,21 @@
     var rows = m.rows.slice(0, m.n);
     out += '<section class="card"><h2>사이클별 요약 <span class="sub">표</span></h2><div class="scroll"><table><thead><tr><th>사이클</th><th class="num">V값</th><th class="num">매수</th><th class="num">매도</th><th class="num">Pool 끝</th><th class="num">평가금</th></tr></thead><tbody>';
     rows.slice().reverse().forEach(function (r) {
-      var p = S.prices[r.n], e = p > 0 ? r.sharesEnd * p : NaN;
-      out += '<tr><td>' + r.n + ' <span class="label">' + short(r.start).replace(/\(.\)/, '') + '</span></td><td class="num">' + money(r.V) + '</td><td class="num">' + int(r.buyQty) + '</td><td class="num">' + int(r.sellQty) + '</td><td class="num">' + money(r.poolEnd) + '</td><td class="num">' + (isFinite(e) ? money(e) : '-') + '</td></tr>';
+      var p = m.priceOf(r.n), e = p > 0 ? r.sharesEnd * p : NaN, cm = S.closeMeta && S.closeMeta[r.n];
+      out += '<tr><td>' + r.n + ' <span class="label">' + short(r.start).replace(/\(.\)/, '') + '</span></td><td class="num">' + money(r.V) + '</td><td class="num">' + int(r.buyQty) + '</td><td class="num">' + int(r.sellQty) + '</td><td class="num">' + money(r.poolEnd) + '</td><td class="num">' + (isFinite(e) ? money(e) : '-') + (isFinite(e) && r.n < m.n && cm && cm.source === 'manual' ? ' <span class="chip hold">직접</span>' : '') + '</td></tr>';
     });
-    out += '</tbody></table></div><p class="hint">사이클 종료 시점 평가금은 그 사이클의 종가를 입력해야 계산됩니다.</p>';
-    out += '<div class="grid2"><div class="field"><label for="cp-n">종가 입력 사이클</label><select id="cp-n">' + rows.map(function (r) { return '<option value="' + r.n + '"' + (r.n === m.n ? ' selected' : '') + '>사이클 ' + r.n + '</option>'; }).reverse().join('') + '</select></div><div class="field"><label for="cp-px">그 사이클 마지막 종가($)</label><input id="cp-px" class="num" inputmode="decimal" placeholder="0.00"></div></div><button class="btn" data-act="closeprice">종가 저장</button><p class="msg' + (U.msg.cpOk ? ' ok' : '') + '" id="cp-msg" role="status">' + esc(U.msg.cp || '') + '</p></section>';
+    out += '</tbody></table></div><p class="hint">끝난 사이클의 평가금은 종가로 계산하며, 종가는 앱을 열 때 자동으로 채웁니다. 현재 사이클은 현재가 기준입니다.</p>';
+    if (!S.demo) {
+      var ended = rows.filter(function (r) { return cycleEnded(r, m.today); }).reverse(), cq = U.close || {};
+      if (ended.length) {
+        var sel = ended.some(function (r) { return r.n === U.closeSel; }) ? U.closeSel : ended[0].n;
+        var opts = '<div class="field"><label for="cp-n">종가 사이클</label><select id="cp-n">' + ended.map(function (r) { return '<option value="' + r.n + '"' + (r.n === sel ? ' selected' : '') + '>사이클 ' + r.n + '</option>'; }).join('') + '</select></div>';
+        out += '<div class="grid2">' + opts + '<div class="field"><label>&nbsp;</label><button class="btn" data-act="refetchclose"' + (cq.busy ? ' disabled' : '') + '>' + (cq.busy ? '가져오는 중…' : '종가 다시 가져오기') + '</button></div></div>';
+        if (cq.reason) out += '<p class="hint">' + esc(REASON[cq.reason] || REASON.error) + ' 아래에 직접 입력할 수 있습니다.</p><div class="field"><label for="cp-px">그 사이클 마지막 종가($) <span class="chip hold">직접 입력</span></label><input id="cp-px" class="num" inputmode="decimal" placeholder="0.00"></div><button class="btn" data-act="closeprice">종가 저장</button>';
+      }
+      out += '<p class="msg' + (U.msg.cpOk ? ' ok' : '') + '" id="cp-msg" role="status">' + esc(U.msg.cp || '') + '</p>';
+    }
+    out += '</section>';
     // trade list
     var byC = {}; S.trades.forEach(function (t) { var n = cycleIndexFor(s.startDate, t.date); (byC[n] = byC[n] || []).push(t); });
     var keys = Object.keys(byC).map(Number).sort(function (a, b) { return b - a; });
@@ -263,7 +285,7 @@
   function viewChart() {
     var m = model(), rows = m.rows.slice(0, m.n), off = Math.max(0, rows.length - 26); rows = rows.slice(off);
     var cats = rows.map(function (r) { return String(r.n); });
-    var evals = rows.map(function (r) { var p = S.prices[r.n]; return p > 0 ? r.sharesEnd * p : null; });
+    var evals = rows.map(function (r) { var p = m.priceOf(r.n); return p > 0 ? r.sharesEnd * p : null; });
     var out = demoBanner();
     var c1 = drawChart('ch-v', cats, { label: 'V값, 밴드, 평가금 추이', band: { lo: rows.map(function (r) { return r.min; }), hi: rows.map(function (r) { return r.max; }) },
       lines: [{ vals: rows.map(function (r) { return r.V; }), cls: 's-v' }, { vals: evals, cls: 's-eval', dots: true, dot: 's-dot-eval' }],
@@ -271,10 +293,10 @@
     var c2 = drawChart('ch-p', cats, { label: 'Pool 잔액 추이', zero: true, lines: [{ vals: rows.map(function (r) { return r.poolEnd; }), cls: 's-pool', dots: true, dot: 's-dot-pool' }],
       readout: function (i) { var r = rows[i]; document.getElementById('ro-p').innerHTML = '<span>사이클 <b>' + r.n + '</b></span><span>Pool <b>' + money2(r.poolEnd) + '</b></span><span>사용 <b>' + money2(r.buyCost) + '</b></span><span>회수 <b>' + money2(r.sellIn) + '</b></span>'; } });
     out += '<section class="card chartbox"><h2>V값과 평가금 <span class="sub">가로: 사이클</span></h2><div class="readout" id="ro-v" aria-live="polite"></div>' + c1
-      + '<div class="legend"><span><i style="background:var(--ink)"></i>V값</span><span><i class="band"></i>최소~최대 밴드</span><span><i style="background:var(--accent)"></i>평가금(사이클 종가)</span></div></section>';
+      + '<div class="legend"><span><i style="background:var(--ink)"></i>V값</span><span><i class="band"></i>최소~최대 밴드</span><span><i style="background:var(--accent)"></i>평가금(종가, 현재 사이클은 현재가)</span></div></section>';
     out += '<section class="card chartbox"><h2>Pool 잔액 <span class="sub">사이클 종료 시점</span></h2><div class="readout" id="ro-p" aria-live="polite"></div>' + c2
       + '<div class="legend"><span><i style="background:var(--pool)"></i>Pool</span></div></section>';
-    var last = rows[rows.length - 1], p = S.prices[last.n], e = p > 0 ? last.sharesEnd * p : NaN;
+    var last = rows[rows.length - 1], p = m.priceOf(last.n), e = p > 0 ? last.sharesEnd * p : NaN;
     out += '<section class="card"><h2>현재 요약</h2><div class="grid2"><div class="stat"><span class="label">평가금 + Pool</span><span class="v big">' + (isFinite(e) ? money(e + last.poolEnd) : '-') + '</span></div><div class="stat"><span class="label">V값 대비 평가금</span><span class="v big">' + (isFinite(e) ? ((e / last.V - 1) * 100).toFixed(1) + '%' : '-') + '</span></div></div><p class="hint">차트를 터치하거나 마우스를 올리면 사이클별 값이 위에 표시됩니다.</p></section>';
     return out;
   }
@@ -333,7 +355,9 @@
     },
     price: function (v, el) {
       var p = num(el.value), m = model();
-      if (el.value.trim() === '') { delete S.prices[m.n]; } else if (isFinite(p) && p > 0) { S.prices[m.n] = p; } else return;
+      if (S.demo) {
+        if (el.value.trim() === '') { delete S.prices[m.n]; } else if (isFinite(p) && p > 0) { S.prices[m.n] = p; } else return;
+      } else if (el.value.trim() === '') { S.quote = null; } else if (isFinite(p) && p > 0) { S.quote = { price: p, at: Date.now(), source: 'manual' }; } else return;
       save(); render();
     },
     check: function (v, el) { if (el.checked) S.checks[v] = true; else delete S.checks[v]; save(); render(); },
@@ -354,11 +378,13 @@
       S.trades = S.trades.filter(function (t) { return t.id !== v; }); U.armed = ''; save(); render();
     },
     closeprice: function () {
-      var n = parseInt(val('cp-n'), 10), p = num(val('cp-px'));
+      var n = parseInt(val('cp-n'), 10), p = num(val('cp-px')), row = buildLedger(S, n)[n - 1];
       if (S.demo) { U.msg.cp = '예시 화면에서는 저장되지 않습니다.'; U.msg.cpOk = false; return render(); }
-      if (!(p > 0)) { U.msg.cp = '종가를 0보다 크게 입력하세요.'; U.msg.cpOk = false; return render(); }
-      S.prices[n] = p; U.msg.cp = '사이클 ' + n + ' 종가를 저장했습니다.'; U.msg.cpOk = true; save(); render();
+      if (!(p > 0)) { U.closeSel = n; U.msg.cp = '종가를 0보다 크게 입력하세요.'; U.msg.cpOk = false; return render(); }
+      U.closeSel = n; S.prices[n] = p; S.closeMeta[n] = { date: row.end, source: 'manual' }; U.msg.cp = '사이클 ' + n + ' 종가를 저장했습니다.'; U.msg.cpOk = true; save(); render();
     },
+    refreshquote: function () { refreshQuote(); },
+    refetchclose: function () { var n = parseInt(val('cp-n'), 10); U.closeSel = n; U.msg.cp = ''; fillCloses(n); },
     mode: function (v) {
       var def = modeDefaults(v);
       document.querySelectorAll('[data-act="mode"]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-v') === v)); });
@@ -366,8 +392,10 @@
     },
     saveset: function () {
       var f = collectForm(false); if (typeof f === 'string') return fail('set', f);
-      if (S.demo) { S = { demo: false, settings: f, trades: [], prices: {}, checks: {}, quote: null, closeMeta: {}, exported: {}, savedAt: 0 }; U.tab = 'today'; U.msg = {}; save(); render(); window.scrollTo(0, 0); return; }
-      S.settings = f; setMsg('set', '저장했습니다. 모든 사이클을 다시 계산했습니다.', true); save(); render();
+      if (S.demo) { S = { demo: false, settings: f, trades: [], prices: {}, checks: {}, quote: null, closeMeta: {}, exported: {}, savedAt: 0 }; U.tab = 'today'; U.msg = {}; U.quote = {}; U.close = {}; save(); render(); window.scrollTo(0, 0); refreshAll(); return; }
+      var tkChanged = f.ticker !== S.settings.ticker;
+      S.settings = f; if (tkChanged) S.quote = null;
+      setMsg('set', '저장했습니다. 모든 사이클을 다시 계산했습니다.', true); save(); render(); if (tkChanged) refreshAll();
     },
     export: function () {
       var b = JSON.stringify(bodyOf(S), null, 1), name = 'vr-tracker-' + todayStr() + '.json';
@@ -390,7 +418,7 @@
       var cur = secrets(), td = val('c-td').trim(), gh = val('c-gh').trim();
       var o = { tdKey: td || cur.tdKey, ghToken: gh || cur.ghToken, repo: val('c-repo').trim() || 'Leejieon/obsidian-vault', branch: val('c-br').trim() || 'main', folder: val('c-fo').trim().replace(/^\/+|\/+$/g, '') || 'wiki/투자/VR/사이클 기록' };
       if (saveSecrets(o)) setMsg('conn', '연결 정보를 저장했습니다.', true); else setMsg('conn', '저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.');
-      render();
+      render(); refreshAll();
     },
     reset: function () {
       if (U.armed !== 'reset') { U.armed = 'reset'; return render(); }
@@ -419,6 +447,61 @@
     return f;
   }
 
+  /* ---------- market data (network; never in demo) ---------- */
+  var lastQuoteAt = 0;
+  function softRender() {
+    if (!S) return;
+    var a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) { pendingRender = true; return; }
+    render();
+  }
+  var pendingRender = false;
+  function fetchFn() { return window.fetch.bind(window); }
+  function refreshQuote() {
+    if (!S || S.demo || !window.VRNet) return Promise.resolve();
+    if (U.quote && U.quote.busy) return Promise.resolve();
+    var tk = S.settings.ticker || 'TQQQ';
+    U.quote = { busy: true }; lastQuoteAt = Date.now(); softRender();
+    return window.VRNet.fetchQuote(secrets().tdKey, tk, fetchFn()).then(function (r) {
+      if (!S || S.demo || (S.settings.ticker || 'TQQQ') !== tk) { U.quote = {}; return; }
+      if (r.ok) { S.quote = { price: r.price, at: r.at || null, source: 'api' }; U.quote = {}; save(); } else U.quote = { reason: r.reason };
+      softRender();
+    }, function () { U.quote = { reason: 'error' }; softRender(); });
+  }
+  // force: a cycle number to refetch even if it already has an api close.
+  function fillCloses(force) {
+    if (!S || S.demo || !window.VRNet) return Promise.resolve();
+    if (U.close && U.close.busy) return Promise.resolve();
+    var s = S.settings, today = todayStr(), tk = s.ticker || 'TQQQ';
+    if (today < s.startDate) return Promise.resolve();
+    var rows = buildLedger(S, cycleIndexFor(s.startDate, today));
+    var targets = rows.filter(function (r) {
+      if (!cycleEnded(r, today)) return false;
+      var cm = S.closeMeta[r.n];
+      return r.n === force || !(S.prices[r.n] > 0) || (cm && cm.source === 'manual');
+    });
+    if (!targets.length) { U.close = {}; softRender(); return Promise.resolve(); }
+    var start = targets.reduce(function (a, r) { return r.start < a ? r.start : a; }, targets[0].start);
+    U.close = { busy: true }; softRender();
+    return window.VRNet.fetchDailyBars(secrets().tdKey, tk, start, today, fetchFn()).then(function (r) {
+      if (!S || S.demo) { U.close = {}; return; }
+      if (!r.ok) { U.close = { reason: r.reason }; return softRender(); }
+      var got = window.pickCycleCloses(targets, r.bars, today), miss = false;
+      targets.forEach(function (t) {
+        var g = got[t.n];
+        if (g) { S.prices[t.n] = g.price; S.closeMeta[t.n] = { date: g.date, source: 'api' }; }
+        else if (!(S.prices[t.n] > 0)) miss = true;
+      });
+      U.close = miss ? { reason: 'error' } : {};
+      save(); softRender();
+    }, function () { U.close = { reason: 'error' }; softRender(); });
+  }
+  function refreshAll() { return refreshQuote().then(function () { return fillCloses(); }); }
+  document.addEventListener('focusout', function () { if (pendingRender) setTimeout(function () { var a = document.activeElement; if (pendingRender && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) { pendingRender = false; render(); } }, 0); });
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && S && !S.demo && Date.now() - lastQuoteAt >= 30000) refreshQuote();
+  });
+
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-act]'); if (!el) return;
     var a = el.getAttribute('data-act');
@@ -438,4 +521,5 @@
   store.status = 'local';
   render();
   initStorage();
+  refreshAll();
 })();
