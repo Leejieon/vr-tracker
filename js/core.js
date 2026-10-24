@@ -135,5 +135,30 @@ function buildIcs(settings, appUrl) {
   return L.reduce(function (a, l) { return a.concat(icsFold(l)); }, []).join("\r\n") + "\r\n";
 }
 
-if (typeof module !== "undefined") module.exports = { parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, cycleIndexFor: cycleIndexFor, cycleStartDate: cycleStartDate, modeDefaults: modeDefaults, buildLedger: buildLedger, buyLadder: buyLadder, sellLadder: sellLadder, zoneFor: zoneFor, TASK_OFFSET: TASK_OFFSET, cycleEnded: cycleEnded, pickCycleCloses: pickCycleCloses, buildIcs: buildIcs };
+function noteFileName(n) { return "VR 사이클 " + n + ".md"; }
+
+function cycleNote(row, trades, close, ticker) {
+  function md(d) { var p = d.split("-"); return Number(p[1]) + "/" + Number(p[2]); }
+  var sorted = trades.slice().sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : 0; });
+  var out = ["---", "tags: [투자, VR]", "사이클: " + row.n, "시작일: " + row.start, "종료일: " + row.end, "종목: " + ticker,
+    "V: " + Math.round(row.V), "최소밴드: " + Math.round(row.min), "최대밴드: " + Math.round(row.max),
+    "시작Pool: " + row.poolStart.toFixed(2), "끝Pool: " + row.poolEnd.toFixed(2), "보유수량: " + row.sharesEnd,
+    "종가: " + close.price, "종가일: " + close.date, "평가금: " + Math.round(row.sharesEnd * close.price),
+    "다음V: " + Math.round(row.nextV), "---", "",
+    "# VR 사이클 " + row.n + " (" + md(row.start) + "–" + md(row.end) + ")", "",
+    "매수 " + row.buyQty + "주 · 매도 " + row.sellQty + "주", ""];
+  if (!sorted.length) {
+    out.push("체결 없음");
+  } else {
+    out.push("| 날짜 | 구분 | 수량 | 가격 | 금액 | 메모 |", "|---|---|---|---|---|---|");
+    sorted.forEach(function (t) {
+      var memo = String(t.memo || "").replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+      out.push("| " + t.date + " | " + (t.side === "buy" ? "매수" : "매도") + " | " + t.qty + " | " + t.price.toFixed(2) + " | " + (t.qty * t.price).toFixed(2) + " | " + memo + " |");
+    });
+  }
+  out.push("", "관련: [[밸류 리밸런싱]]", "");
+  return out.join("\n");
+}
+
+if (typeof module !== "undefined") module.exports = { parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, cycleIndexFor: cycleIndexFor, cycleStartDate: cycleStartDate, modeDefaults: modeDefaults, buildLedger: buildLedger, buyLadder: buyLadder, sellLadder: sellLadder, zoneFor: zoneFor, TASK_OFFSET: TASK_OFFSET, cycleEnded: cycleEnded, pickCycleCloses: pickCycleCloses, buildIcs: buildIcs, noteFileName: noteFileName, cycleNote: cycleNote };
 

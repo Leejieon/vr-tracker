@@ -114,3 +114,23 @@ test('buildIcs escapes commas and semicolons', function () {
   var ics = vr.buildIcs(state({ ticker: 'A,B;C' }).settings, 'x');
   assert.ok(ics.indexOf('A\\,B\\;C') >= 0);
 });
+
+test('cycleNote has frontmatter numbers for Bases and a trade table', function () {
+  var st = state();
+  st.trades.push({ date: '2026-01-07', side: 'buy', qty: 2, price: 80, memo: '예약|1번째\n추가' });
+  var row = vr.buildLedger(st, 1)[0];
+  var md = vr.cycleNote(row, st.trades, { price: 85.5, date: '2026-01-16' }, 'TQQQ');
+  var expectHead = ['---', 'tags: [투자, VR]', '사이클: 1', '시작일: 2026-01-05', '종료일: 2026-01-18', '종목: TQQQ',
+    'V: 10000', '최소밴드: 8500', '최대밴드: 11500', '시작Pool: 3000.00', '끝Pool: 2840.00', '보유수량: 102',
+    '종가: 85.5', '종가일: 2026-01-16', '평가금: 8721', '다음V: 10534', '---'];
+  assert.deepStrictEqual(md.split('\n').slice(0, expectHead.length), expectHead);
+  assert.ok(md.indexOf('# VR 사이클 1 (1/5–1/18)') >= 0);
+  assert.ok(md.indexOf('매수 2주 · 매도 0주') >= 0);
+  assert.ok(md.indexOf('| 2026-01-07 | 매수 | 2 | 80.00 | 160.00 | 예약\\|1번째 추가 |') >= 0);
+  assert.ok(md.trim().endsWith('관련: [[밸류 리밸런싱]]'));
+});
+test('cycleNote without trades says so', function () {
+  var row = vr.buildLedger(state(), 1)[0];
+  assert.ok(vr.cycleNote(row, [], { price: 50, date: '2026-01-16' }, 'TQQQ').indexOf('체결 없음') >= 0);
+});
+test('noteFileName', function () { assert.strictEqual(vr.noteFileName(5), 'VR 사이클 5.md'); });
