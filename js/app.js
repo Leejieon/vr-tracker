@@ -5,7 +5,7 @@
   var S = null;                       // persisted state
   var U = { tab: 'today', side: 'buy', armed: '', msg: {}, chartSel: {} };
   var store = { status: 'local' };
-  var LS_KEY = 'vr-ledger-v1';
+  var LS_KEY = 'vr-ledger-v1';         // old app name; kept so saved records still load
   var $app = document.getElementById('app'), $tabs = document.getElementById('tabs');
 
   /* ---------- helpers ---------- */
@@ -285,7 +285,7 @@
     if (!S) return;
     chartCtx = {};
     var v = U.tab === 'today' ? viewToday : U.tab === 'log' ? viewLog : U.tab === 'chart' ? viewChart : viewSet;
-    $app.innerHTML = '<header class="top"><h1>VR 장부</h1><span class="sync" id="sync"></span></header>' + v();
+    $app.innerHTML = '<header class="top"><h1>VR Tracker</h1><span class="sync" id="sync"></span></header>' + v();
     $tabs.innerHTML = TABS.map(function (t) { return '<button data-act="tab" data-v="' + t[0] + '"' + (U.tab === t[0] ? ' aria-current="page"' : '') + '>' + t[1] + '</button>'; }).join('');
     paintSync();
     if (U.tab === 'chart') { bindChart('ch-v'); bindChart('ch-p'); ['ch-v', 'ch-p'].forEach(function (id) { if (chartCtx[id]) chartCtx[id].cb(chartCtx[id].N - 1); }); }
@@ -345,7 +345,7 @@
       S.settings = f; setMsg('set', '저장했습니다. 모든 사이클을 다시 계산했습니다.', true); save(); render();
     },
     export: function () {
-      var b = JSON.stringify(bodyOf(S), null, 1), name = 'vr-ledger-' + todayStr() + '.json';
+      var b = JSON.stringify(bodyOf(S), null, 1), name = 'vr-tracker-' + todayStr() + '.json';
       saveFile(name, b).then(function () { setMsg('bk', '파일을 내보냈습니다.', true); render(); }).catch(function (e) { setMsg('bk', e && e.name === 'AbortError' ? '저장을 취소했습니다.' : '파일 저장에 실패했습니다. 복사를 사용하세요.'); render(); });
     },
     copy: function () {

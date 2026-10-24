@@ -1,4 +1,4 @@
-# VR 장부
+# VR Tracker
 
 라오어 VR(밸류 리밸런싱) 매매 기록을 위한 PWA입니다. 아이폰 Safari에서 열고 공유 → **홈 화면에 추가**하면 앱처럼 쓸 수 있습니다.
 
@@ -35,4 +35,4 @@ node --test test/*.test.js    # 계산 로직 테스트
 
 `main` 브랜치에 push하면 GitHub Pages로 배포됩니다.
 
-설계 문서, 구현 계획, 개발 기록은 이 저장소가 아니라 개인 Obsidian 위키(`wiki/개발/VR 장부/`)에 둡니다. `docs/`는 `.gitignore`에 들어 있습니다.
+설계 문서, 구현 계획, 개발 기록은 이 저장소가 아니라 개인 Obsidian 위키(`wiki/개발/VR Tracker/`)에 둡니다. `docs/`는 `.gitignore`에 들어 있습니다.

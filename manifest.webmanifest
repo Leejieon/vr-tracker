@@ -1,6 +1,6 @@
 {
-  "name": "VR 장부",
-  "short_name": "VR 장부",
+  "name": "VR Tracker",
+  "short_name": "VR Tracker",
   "description": "라오어 VR(밸류 리밸런싱) 매매 기록 장부",
   "lang": "ko",
   "start_url": "./",
