@@ -3,7 +3,7 @@
   var WD = ['일', '월', '화', '수', '목', '금', '토'];
   var TABS = [['today', '오늘'], ['log', '기록'], ['chart', '차트'], ['set', '설정']];
   var S = null;                       // persisted state
-  var U = { tab: 'today', side: 'buy', armed: '', msg: {}, chartSel: {}, quote: {}, close: {} };   // quote/close: fetch status, never saved
+  var U = { tab: 'today', side: 'buy', armed: '', msg: {}, chartSel: {}, quote: {}, close: {}, tradesOpen: {} };   // quote/close: fetch status, never saved
   var store = { status: 'local' };
   var LS_KEY = 'vr-ledger-v1';         // old app name; kept so saved records still load
   var $app = document.getElementById('app'), $tabs = document.getElementById('tabs');
@@ -189,9 +189,14 @@
   function priceField(m, tk) {
     var q = S.quote, uq = U.quote || {}, busy = !!uq.busy;
     var btn = '<button class="btn small refresh" data-act="refreshquote" aria-label="현재가 다시 조회"' + (busy ? ' disabled' : '') + '>' + (busy ? '조회 중…' : '↻') + '</button>';
-    if (S.demo || uq.reason) {
-      return '<div class="field"><label for="px">' + esc(tk) + ' 현재가 (달러)' + (!S.demo && q && q.source === 'manual' ? ' <span class="chip hold">직접 입력</span>' : '') + '</label><div class="pxline"><input id="px" class="num" inputmode="decimal" value="' + (m.price > 0 ? m.price : '') + '" data-act="price" placeholder="예: 62.40">' + (S.demo ? '' : btn) + '</div>'
-        + (S.demo ? '' : '<span class="hint">' + esc(REASON[uq.reason] || REASON.error) + '</span>') + '</div>';
+    if (S.demo) {
+      // Demo never fetches, so show the example price read-only and say how to turn lookups on.
+      return '<div class="field"><label>현재가 (달러)</label><div class="pxline"><span class="pxtext">' + esc(tk) + ' <b class="num">' + money2(m.price) + '</b> <span class="chip hold">예시</span></span></div>'
+        + '<span class="hint">내 설정으로 시작하고 설정 → 연결에 Twelve Data 키를 넣으면 자동으로 조회합니다</span></div>';
+    }
+    if (uq.reason) {
+      return '<div class="field"><label for="px">' + esc(tk) + ' 현재가 (달러)' + (q && q.source === 'manual' ? ' <span class="chip hold">직접 입력</span>' : '') + '</label><div class="pxline"><input id="px" class="num" inputmode="decimal" value="' + (m.price > 0 ? m.price : '') + '" data-act="price" placeholder="예: 62.40">' + btn + '</div>'
+        + '<span class="hint">' + esc(REASON[uq.reason] || REASON.error) + '</span></div>';
     }
     var line = q && q.price > 0 ? esc(tk) + ' <b class="num">' + money2(q.price) + '</b>' + (q.at ? '<small class="asof">' + hhmm(q.at) + ' 기준</small>' : '') + (q.source === 'manual' ? ' <span class="chip hold">직접 입력</span>' : '') : (busy ? esc(tk) + ' 현재가를 가져오는 중입니다' : esc(tk) + ' 현재가 없음');
     return '<div class="field"><label>현재가 (달러)</label><div class="pxline"><span class="pxtext">' + line + '</span>' + btn + '</div></div>';
@@ -245,7 +250,8 @@
   function viewLog() {
     var m = model(), s = m.s, out = demoBanner();
     out += '<section class="card"><h2>매매 기록 추가</h2><div class="seg" role="group" aria-label="매수 또는 매도"><button class="buy" data-act="side" data-v="buy" aria-pressed="' + (U.side === 'buy') + '">매수</button><button class="sell" data-act="side" data-v="sell" aria-pressed="' + (U.side === 'sell') + '">매도</button></div>'
-      + '<div class="grid3"><div class="field"><label for="t-date">체결일</label><input id="t-date" type="date" value="' + m.today + '"></div><div class="field"><label for="t-qty">수량(주)</label><input id="t-qty" class="num" inputmode="numeric" placeholder="1"></div><div class="field"><label for="t-px">체결가($)</label><input id="t-px" class="num" inputmode="decimal" placeholder="0.00"></div></div>'
+      + '<div class="field"><label for="t-date">체결일</label><input id="t-date" type="date" value="' + m.today + '"></div>'
+      + '<div class="grid2"><div class="field"><label for="t-qty">수량(주)</label><input id="t-qty" class="num" inputmode="numeric" placeholder="1"></div><div class="field"><label for="t-px">체결가($)</label><input id="t-px" class="num" inputmode="decimal" placeholder="0.00"></div></div>'
       + '<div class="field"><label for="t-memo">메모 (선택)</label><input id="t-memo" maxlength="80" placeholder="예: 예약 매수 3번째"></div>'
       + '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between"><span class="num" id="t-total" style="color:var(--ink2)">합계 $0.00</span><button class="btn primary" data-act="addtrade">기록하기</button></div><p class="msg' + (U.msg.tradeOk ? ' ok' : '') + '" id="t-msg" role="status">' + esc(U.msg.trade || '') + '</p></section>';
     // cycle table
@@ -273,13 +279,17 @@
     var keys = Object.keys(byC).map(Number).sort(function (a, b) { return b - a; });
     out += '<section class="card"><h2>체결 내역 <span class="sub">' + S.trades.length + '건</span></h2>';
     if (!keys.length) out += '<p class="hint">아직 기록이 없습니다. 위에서 첫 체결을 추가해 보세요.</p>';
-    keys.forEach(function (n) {
+    keys.forEach(function (n, i) {
       var list = byC[n].slice().sort(function (a, b) { return a.date < b.date ? 1 : a.date > b.date ? -1 : 0; });
-      out += '<div class="group-title"><span>사이클 ' + n + '</span><span class="num">' + short(cycleStartDate(s.startDate, n)).replace(/\(.\)/, '') + '~</span></div>';
+      var buys = list.filter(function (t) { return t.side === 'buy'; }).length;
+      // Newest cycle starts open; the user's open/closed choice survives re-renders via U.tradesOpen.
+      var open = n in U.tradesOpen ? U.tradesOpen[n] : i === 0;
+      out += '<details class="cycle-group" data-n="' + n + '"' + (open ? ' open' : '') + '><summary><span>사이클 ' + n + ' <span class="label num">' + short(cycleStartDate(s.startDate, n)).replace(/\(.\)/, '') + '~</span></span><span class="label">매수 ' + buys + ' · 매도 ' + (list.length - buys) + '건</span></summary>';
       list.forEach(function (t) {
         var armed = U.armed === 'del:' + t.id;
         out += '<div class="trade"><span class="side ' + t.side + '">' + (t.side === 'buy' ? '매수' : '매도') + '</span><span class="main num">' + int(t.qty) + '주 × ' + money2(t.price) + ' = ' + money2(t.qty * t.price) + '</span><button class="btn small' + (armed ? ' warn' : '') + '" data-act="deltrade" data-v="' + esc(t.id) + '">' + (armed ? '한 번 더 눌러 삭제' : '삭제') + '</button><span class="meta">' + short(t.date) + (t.memo ? ' · ' + esc(t.memo) : '') + '</span></div>';
       });
+      out += '</details>';
     });
     return out + '</section>';
   }
@@ -577,6 +587,11 @@
     if (!(a === 'deltrade' || a === 'import' || a === 'reset' || a === 'clearsecret') && U.armed) U.armed = '';
     if (actions[a]) actions[a](el.getAttribute('data-v'), el);
   });
+  // 'toggle' does not bubble, so listen in the capture phase.
+  document.addEventListener('toggle', function (ev) {
+    var el = ev.target;
+    if (el.classList && el.classList.contains('cycle-group')) U.tradesOpen[el.getAttribute('data-n')] = el.open;
+  }, true);
   document.addEventListener('change', function (ev) {
     var el = ev.target.closest('[data-act]'); if (!el) return;
     var a = el.getAttribute('data-act');
