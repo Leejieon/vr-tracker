@@ -77,5 +77,25 @@ function zoneFor(evalAmt, min, max) {
   return 'hold';
 }
 
-if (typeof module !== "undefined") module.exports = { parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, cycleIndexFor: cycleIndexFor, cycleStartDate: cycleStartDate, modeDefaults: modeDefaults, buildLedger: buildLedger, buyLadder: buyLadder, sellLadder: sellLadder, zoneFor: zoneFor };
+var TASK_OFFSET = { record: 11, calc: 12, orderFrom: 12, orderDue: 14 };
+
+function cycleEnded(row, today) {
+  return today > row.end;
+}
+
+// Last bar inside each ended cycle's [start, end] window, keyed by cycle number.
+function pickCycleCloses(rows, bars, today) {
+  var out = {};
+  rows.forEach(function (r) {
+    if (!cycleEnded(r, today)) return;
+    var best = null;
+    bars.forEach(function (b) {
+      if (b.date >= r.start && b.date <= r.end && (!best || b.date > best.date)) best = b;
+    });
+    if (best) out[r.n] = { price: best.close, date: best.date };
+  });
+  return out;
+}
+
+if (typeof module !== "undefined") module.exports = { parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, cycleIndexFor: cycleIndexFor, cycleStartDate: cycleStartDate, modeDefaults: modeDefaults, buildLedger: buildLedger, buyLadder: buyLadder, sellLadder: sellLadder, zoneFor: zoneFor, TASK_OFFSET: TASK_OFFSET, cycleEnded: cycleEnded, pickCycleCloses: pickCycleCloses };
 

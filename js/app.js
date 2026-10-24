@@ -85,11 +85,11 @@
   }
   function tasksFor(m) {
     var st = m.cur.start, mode = m.s.mode, out = [];
-    out.push({ key: 'close', t: '마지막 거래일 종가와 체결 내역 기록', d: addDays(st, 11) });
-    out.push({ key: 'calc', t: '새 V값과 밴드 확인', d: addDays(st, 12) });
-    if (mode !== 'lump') out.push({ key: 'cash', t: mode === 'withdraw' ? '인출금 Pool 반영 확인' : '적립금 Pool 입금 확인', d: addDays(st, 12) });
-    out.push({ key: 'buy', t: '예약 매수 주문 설정', d: addDays(st, 14), from: addDays(st, 12) });
-    out.push({ key: 'sell', t: '예약 매도 주문 설정', d: addDays(st, 14), from: addDays(st, 12) });
+    out.push({ key: 'close', t: '체결 내역 기록 (종가는 자동)', d: addDays(st, TASK_OFFSET.record) });
+    out.push({ key: 'calc', t: '새 V값과 밴드 확인', d: addDays(st, TASK_OFFSET.calc) });
+    if (mode !== 'lump') out.push({ key: 'cash', t: mode === 'withdraw' ? '인출금 Pool 반영 확인' : '적립금 Pool 입금 확인', d: addDays(st, TASK_OFFSET.calc) });
+    out.push({ key: 'buy', t: '예약 매수 주문 설정', d: addDays(st, TASK_OFFSET.orderDue), from: addDays(st, TASK_OFFSET.orderFrom) });
+    out.push({ key: 'sell', t: '예약 매도 주문 설정', d: addDays(st, TASK_OFFSET.orderDue), from: addDays(st, TASK_OFFSET.orderFrom) });
     out.forEach(function (x) { x.done = !!S.checks[m.n + ':' + x.key]; });
     return out;
   }

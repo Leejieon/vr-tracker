@@ -67,3 +67,27 @@ test('zone', function () {
   assert.strictEqual(vr.zoneFor(10000, 8500, 11500), 'hold');
   assert.strictEqual(vr.zoneFor(12000, 8500, 11500), 'sell');
 });
+
+test('task offsets match the checklist', function () {
+  assert.deepStrictEqual(vr.TASK_OFFSET, { record: 11, calc: 12, orderFrom: 12, orderDue: 14 });
+});
+test('cycleEnded uses the day after the end date', function () {
+  var r = vr.buildLedger(state(), 1)[0];               // 2026-01-05 .. 2026-01-18
+  assert.strictEqual(vr.cycleEnded(r, '2026-01-18'), false);
+  assert.strictEqual(vr.cycleEnded(r, '2026-01-19'), true);
+});
+test('pickCycleCloses takes the last bar inside each ended cycle', function () {
+  var rows = vr.buildLedger(state(), 3);                // cycles start 01-05, 01-19, 02-02
+  var bars = [
+    { date: '2026-01-16', close: 50 }, { date: '2026-01-15', close: 49 },
+    { date: '2026-01-29', close: 55 },                  // 01-30 holiday: Thursday wins
+    { date: '2026-02-03', close: 60 }                   // cycle 3 not ended
+  ];
+  assert.deepStrictEqual(vr.pickCycleCloses(rows, bars, '2026-02-04'), {
+    1: { price: 50, date: '2026-01-16' }, 2: { price: 55, date: '2026-01-29' }
+  });
+});
+test('pickCycleCloses leaves a cycle without bars empty', function () {
+  var rows = vr.buildLedger(state(), 2);
+  assert.deepStrictEqual(vr.pickCycleCloses(rows, [{ date: '2026-01-30', close: 55 }], '2026-02-04'), { 2: { price: 55, date: '2026-01-30' } });
+});
