@@ -25,7 +25,7 @@
   /* ---------- demo data (in memory only, never saved) ---------- */
   function makeDemo() {
     var start = addDays(mondayOf(todayStr()), -56);
-    var st = { demo: true, settings: { mode: 'accumulate', G: 10, bandLow: 15, bandHigh: 15, poolLimit: 75, amount: 250, startDate: start, v1: 9960, pool0: 3000, shares0: 166, ticker: 'TQQQ' }, trades: [], prices: {}, checks: {} };
+    var st = { demo: true, settings: { mode: 'accumulate', G: 10, bandLow: 15, bandHigh: 15, poolLimit: 75, amount: 250, startDate: start, v1: 9960, pool0: 3000, shares0: 166, ticker: 'TQQQ' }, trades: [], prices: {}, checks: {}, quote: null, closeMeta: {}, exported: {} };
     var path = [{ lo: 55.5, hi: 64.0, close: 58.2 }, { lo: 50.0, hi: 59.5, close: 52.4 }, { lo: 48.2, hi: 57.0, close: 56.1 }, { lo: 54.0, hi: 66.5, close: 64.3 }];
     path.forEach(function (p, i) {
       var n = i + 1, r = buildLedger(st, n)[n - 1], s0 = cycleStartDate(start, n);
@@ -38,9 +38,27 @@
   }
 
   /* ---------- storage: localStorage on this device ---------- */
-  function bodyOf(st) { return { v: 1, settings: st.settings, trades: st.trades, prices: st.prices, checks: st.checks, savedAt: Date.now() }; }
+  function bodyOf(st) { return { v: 1, settings: st.settings, trades: st.trades, prices: st.prices, checks: st.checks, quote: st.quote || null, closeMeta: st.closeMeta || {}, exported: st.exported || {}, savedAt: Date.now() }; }
   function valid(b) { return b && b.settings && typeof b.settings.v1 === 'number' && Array.isArray(b.trades) && b.settings.startDate; }
-  function fromBody(b) { return { demo: false, settings: b.settings, trades: b.trades, prices: b.prices || {}, checks: b.checks || {}, savedAt: b.savedAt || 0 }; }
+  function fromBody(b) {
+    var st = { demo: false, settings: b.settings, trades: b.trades, prices: b.prices || {}, checks: b.checks || {}, quote: b.quote || null, closeMeta: b.closeMeta || {}, exported: b.exported || {}, savedAt: b.savedAt || 0 };
+    // Older records kept the live price in prices[current cycle]; move it to quote.
+    try {
+      var today = todayStr();
+      if (!st.quote && today >= st.settings.startDate) {
+        var n = cycleIndexFor(st.settings.startDate, today);
+        if (st.prices[n] > 0) { st.quote = { price: st.prices[n], at: null, source: 'manual' }; delete st.prices[n]; }
+      }
+    } catch (e) {}
+    return st;
+  }
+  var SEC_KEY = 'vr-tracker-secrets';
+  function secrets() {
+    var o = {};
+    try { var t = localStorage.getItem(SEC_KEY); o = t ? JSON.parse(t) || {} : {}; } catch (e) { o = {}; }
+    return { tdKey: o.tdKey || '', ghToken: o.ghToken || '', repo: o.repo || 'Leejieon/obsidian-vault', branch: o.branch || 'main', folder: o.folder || 'wiki/투자/VR/사이클 기록' };
+  }
+  function saveSecrets(o) { try { localStorage.setItem(SEC_KEY, JSON.stringify(o)); return true; } catch (e) { return false; } }
   function lsRead() { try { var t = localStorage.getItem(LS_KEY); return t ? JSON.parse(t) : null; } catch (e) { return null; } }
   function lsWrite(b) { try { localStorage.setItem(LS_KEY, JSON.stringify(b)); return true; } catch (e) { return false; } }
   function save() {
@@ -276,6 +294,13 @@
     if (!d) {
       out += '<section class="card"><h2>백업과 복원</h2><p class="hint">기록은 이 아이폰 안에만 저장됩니다. 앱을 지우거나 기기를 바꾸면 사라지니 가끔 파일로 내보내 두세요.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="export">파일로 저장</button><button class="btn" data-act="copy">복사</button></div><p class="msg' + (U.msg.bkOk ? ' ok' : '') + '" id="bk-msg" role="status">' + esc(U.msg.bk || '') + '</p>'
         + '<div class="field"><label for="imp">복원할 내용 붙여넣기</label><textarea id="imp" placeholder="내보낸 JSON을 붙여넣으세요"></textarea></div><button class="btn' + (U.armed === 'import' ? ' warn' : '') + '" data-act="import">' + (U.armed === 'import' ? '현재 기록을 덮어씁니다. 한 번 더 눌러 확인' : '불러오기') + '</button></section>';
+      var sc = secrets();
+      function pw(id, label, v) { return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" type="password" autocomplete="off" placeholder="' + (v ? esc('저장됨 ••••' + v.slice(-4)) : '') + '"></div>'; }
+      function tx(id, label, v) { return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" autocomplete="off" autocapitalize="off" value="' + esc(v) + '"></div>'; }
+      out += '<section class="card"><h2>연결</h2><p class="hint">시세 조회와 Obsidian 기록에 쓰는 키입니다. 이 기기에만 저장되며 백업 파일에는 들어가지 않습니다. 비워 두면 저장된 값을 그대로 씁니다.</p>'
+        + pw('c-td', 'Twelve Data API 키', sc.tdKey) + pw('c-gh', 'GitHub 토큰', sc.ghToken) + tx('c-repo', '저장소', sc.repo) + tx('c-br', '브랜치', sc.branch) + tx('c-fo', '폴더', sc.folder)
+        + '<button class="btn primary" data-act="savesecrets">연결 저장</button><p class="msg' + (U.msg.connOk ? ' ok' : '') + '" id="conn-msg" role="status">' + esc(U.msg.conn || '') + '</p>'
+        + '<p class="hint">Twelve Data: twelvedata.com 가입 → 대시보드의 API key<br>GitHub: Settings → Developer settings → Fine-grained tokens → 저장소 obsidian-vault 하나, Contents: Read and write</p></section>';
       out += '<section class="card"><h2>처음부터 다시</h2><p class="hint">모든 설정과 기록을 지우고 예시 화면으로 돌아갑니다.</p><button class="btn warn" data-act="reset">' + (U.armed === 'reset' ? '정말 지웁니다. 한 번 더 눌러 확인' : '모든 기록 지우기') + '</button></section>';
     }
     return out;
@@ -341,7 +366,7 @@
     },
     saveset: function () {
       var f = collectForm(false); if (typeof f === 'string') return fail('set', f);
-      if (S.demo) { S = { demo: false, settings: f, trades: [], prices: {}, checks: {}, savedAt: 0 }; U.tab = 'today'; U.msg = {}; save(); render(); window.scrollTo(0, 0); return; }
+      if (S.demo) { S = { demo: false, settings: f, trades: [], prices: {}, checks: {}, quote: null, closeMeta: {}, exported: {}, savedAt: 0 }; U.tab = 'today'; U.msg = {}; save(); render(); window.scrollTo(0, 0); return; }
       S.settings = f; setMsg('set', '저장했습니다. 모든 사이클을 다시 계산했습니다.', true); save(); render();
     },
     export: function () {
@@ -361,9 +386,15 @@
       if (U.armed !== 'import') { U.armed = 'import'; var keep = val('imp'); render(); document.getElementById('imp').value = keep; return; }
       S = fromBody(b); U.armed = ''; setMsg('bk', '불러왔습니다.', true); save(); render();
     },
+    savesecrets: function () {
+      var cur = secrets(), td = val('c-td').trim(), gh = val('c-gh').trim();
+      var o = { tdKey: td || cur.tdKey, ghToken: gh || cur.ghToken, repo: val('c-repo').trim() || 'Leejieon/obsidian-vault', branch: val('c-br').trim() || 'main', folder: val('c-fo').trim().replace(/^\/+|\/+$/g, '') || 'wiki/투자/VR/사이클 기록' };
+      if (saveSecrets(o)) setMsg('conn', '연결 정보를 저장했습니다.', true); else setMsg('conn', '저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.');
+      render();
+    },
     reset: function () {
       if (U.armed !== 'reset') { U.armed = 'reset'; return render(); }
-      try { localStorage.removeItem(LS_KEY); } catch (e) {}
+      try { localStorage.removeItem(LS_KEY); localStorage.removeItem(SEC_KEY); } catch (e) {}
       S = makeDemo(); U.armed = ''; U.tab = 'today'; store.status = 'local'; render();
     }
   };
