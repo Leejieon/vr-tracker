@@ -1,6 +1,6 @@
 // Offline support: app files are precached; Google Fonts are cached on first use.
 // Bump VERSION whenever an app file changes so phones pick up the new build.
-var VERSION = 'vr-tracker-v2';
+var VERSION = 'vr-tracker-v3';
 var APP_FILES = ['./', 'index.html', 'css/app.css', 'js/core.js', 'js/net.js', 'js/app.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/apple-touch-icon.png'];
 
 self.addEventListener('install', function (ev) {

@@ -99,3 +99,21 @@ test('putVaultFile 401 and empty token', async function () {
   assert.deepStrictEqual(r, { ok: false, reason: 'nokey' });
   assert.strictEqual(f.calls.length, 0);
 });
+
+test('hung request times out as offline', async function () {
+  var old = Net.timeoutMs; Net.timeoutMs = 30;
+  try {
+    var hang = function () { return new Promise(function () {}); };
+    assert.deepStrictEqual(await Net.fetchQuote('K', 'TQQQ', hang), { ok: false, reason: 'offline' });
+    assert.deepStrictEqual(await Net.fetchDailyBars('K', 'TQQQ', '2026-01-01', '2026-02-01', hang), { ok: false, reason: 'offline' });
+    assert.deepStrictEqual(await Net.putVaultFile({ token: 'T', repo: 'a/b' }, 'x.md', 'hi', 'm', hang), { ok: false, reason: 'offline' });
+  } finally { Net.timeoutMs = old; }
+});
+
+test('timeout passes an abort signal to fetch', async function () {
+  var old = Net.timeoutMs; Net.timeoutMs = 30; var sig;
+  try {
+    await Net.fetchQuote('K', 'TQQQ', function (u, init) { sig = init && init.signal; return new Promise(function () {}); });
+    assert.ok(sig && sig.aborted);
+  } finally { Net.timeoutMs = old; }
+});

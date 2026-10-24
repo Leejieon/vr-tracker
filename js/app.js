@@ -253,7 +253,7 @@
     out += '<section class="card"><h2>사이클별 요약 <span class="sub">표</span></h2><div class="scroll"><table><thead><tr><th>사이클</th><th class="num">V값</th><th class="num">매수</th><th class="num">매도</th><th class="num">Pool 끝</th><th class="num">평가금</th></tr></thead><tbody>';
     rows.slice().reverse().forEach(function (r) {
       var p = m.priceOf(r.n), e = p > 0 ? r.sharesEnd * p : NaN, cm = S.closeMeta && S.closeMeta[r.n];
-      out += '<tr><td>' + r.n + ' <span class="label">' + short(r.start).replace(/\(.\)/, '') + '</span></td><td class="num">' + money(r.V) + '</td><td class="num">' + int(r.buyQty) + '</td><td class="num">' + int(r.sellQty) + '</td><td class="num">' + money(r.poolEnd) + '</td><td class="num">' + (isFinite(e) ? money(e) : '-') + (isFinite(e) && r.n < m.n && cm && cm.source === 'manual' ? ' <span class="chip hold">직접</span>' : '') + '</td></tr>';
+      out += '<tr><td>' + r.n + ' <span class="label">' + short(r.start).replace(/\(.\)/, '') + '</span></td><td class="num">' + money(r.V) + '</td><td class="num">' + int(r.buyQty) + '</td><td class="num">' + int(r.sellQty) + '</td><td class="num">' + money(r.poolEnd) + '</td><td class="num">' + (isFinite(e) ? money(e) : '-') + (isFinite(e) && r.n < m.n && !S.demo && (!cm || cm.source === 'manual') ? ' <span class="chip hold">직접</span>' : '') + '</td></tr>';
     });
     out += '</tbody></table></div><p class="hint">끝난 사이클의 평가금은 종가로 계산하며, 종가는 앱을 열 때 자동으로 채웁니다. 현재 사이클은 현재가 기준입니다.</p>';
     if (!S.demo) {
@@ -333,10 +333,11 @@
       out += '<section class="card"><h2>백업과 복원</h2><p class="hint">기록은 이 아이폰 안에만 저장됩니다. 앱을 지우거나 기기를 바꾸면 사라지니 가끔 파일로 내보내 두세요.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" data-act="export">파일로 저장</button><button class="btn" data-act="copy">복사</button></div><p class="msg' + (U.msg.bkOk ? ' ok' : '') + '" id="bk-msg" role="status">' + esc(U.msg.bk || '') + '</p>'
         + '<div class="field"><label for="imp">복원할 내용 붙여넣기</label><textarea id="imp" placeholder="내보낸 JSON을 붙여넣으세요"></textarea></div><button class="btn' + (U.armed === 'import' ? ' warn' : '') + '" data-act="import">' + (U.armed === 'import' ? '현재 기록을 덮어씁니다. 한 번 더 눌러 확인' : '불러오기') + '</button></section>';
       var sc = secrets();
-      function pw(id, label, v) { return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" type="password" autocomplete="off" placeholder="' + (v ? esc('저장됨 ••••' + v.slice(-4)) : '') + '"></div>'; }
+      function pw(id, label, v, k) { return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" type="password" autocomplete="off" placeholder="' + (v ? esc('저장됨 ••••' + v.slice(-4)) : '') + '">' + clr(k, v) + '</div>'; }
+      function clr(k, v) { if (!v) return ''; var a = U.armed === 'clr:' + k; return '<button class="btn small' + (a ? ' warn' : '') + '" data-act="clearsecret" data-v="' + k + '">' + (a ? '한 번 더 눌러 지우기' : '지우기') + '</button>'; }
       function tx(id, label, v) { return '<div class="field"><label for="' + id + '">' + label + '</label><input id="' + id + '" autocomplete="off" autocapitalize="off" value="' + esc(v) + '"></div>'; }
       out += '<section class="card"><h2>연결</h2><p class="hint">시세 조회와 Obsidian 기록에 쓰는 키입니다. 이 기기에만 저장되며 백업 파일에는 들어가지 않습니다. 비워 두면 저장된 값을 그대로 씁니다.</p>'
-        + pw('c-td', 'Twelve Data API 키', sc.tdKey) + pw('c-gh', 'GitHub 토큰', sc.ghToken) + tx('c-repo', '저장소', sc.repo) + tx('c-br', '브랜치', sc.branch) + tx('c-fo', '폴더', sc.folder)
+        + pw('c-td', 'Twelve Data API 키', sc.tdKey, 'tdKey') + pw('c-gh', 'GitHub 토큰', sc.ghToken, 'ghToken') + tx('c-repo', '저장소', sc.repo) + tx('c-br', '브랜치', sc.branch) + tx('c-fo', '폴더', sc.folder)
         + '<button class="btn primary" data-act="savesecrets">연결 저장</button><p class="msg' + (U.msg.connOk ? ' ok' : '') + '" id="conn-msg" role="status">' + esc(U.msg.conn || '') + '</p>'
         + '<p class="hint">Twelve Data: twelvedata.com 가입 → 대시보드의 API key<br>GitHub: Settings → Developer settings → Fine-grained tokens → 저장소 obsidian-vault 하나, Contents: Read and write</p></section>';
       out += '<section class="card"><h2>처음부터 다시</h2><p class="hint">모든 설정과 기록을 지우고 예시 화면으로 돌아갑니다.</p><button class="btn warn" data-act="reset">' + (U.armed === 'reset' ? '정말 지웁니다. 한 번 더 눌러 확인' : '모든 기록 지우기') + '</button></section>';
@@ -471,6 +472,14 @@
       if (saveSecrets(o)) setMsg('conn', '연결 정보를 저장했습니다.', true); else setMsg('conn', '저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.');
       render(); refreshAll();
     },
+    clearsecret: function (v) {
+      if (v !== 'tdKey' && v !== 'ghToken') return;
+      if (U.armed !== 'clr:' + v) { U.armed = 'clr:' + v; return render(); }
+      U.armed = '';
+      var o = secrets(); o[v] = '';
+      if (saveSecrets(o)) setMsg('conn', '삭제했습니다.', true); else setMsg('conn', '저장하지 못했습니다. 브라우저 저장 공간을 확인하세요.');
+      render();
+    },
     reset: function () {
       if (U.armed !== 'reset') { U.armed = 'reset'; return render(); }
       try { localStorage.removeItem(LS_KEY); localStorage.removeItem(SEC_KEY); } catch (e) {}
@@ -531,7 +540,7 @@
     var targets = rows.filter(function (r) {
       if (!cycleEnded(r, today)) return false;
       var cm = S.closeMeta[r.n];
-      return r.n === force || !(S.prices[r.n] > 0) || (cm && cm.source === 'manual');
+      return r.n === force || !(S.prices[r.n] > 0) || !cm || cm.source === 'manual';   // no closeMeta = saved by the old app, often a typed mid-cycle price
     });
     if (!targets.length) { closeReq = null; U.close = {}; softRender(); return Promise.resolve(); }
     var start = targets.reduce(function (a, r) { return r.start < a ? r.start : a; }, targets[0].start);
@@ -557,14 +566,15 @@
   document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'cp-px') U.closeTyped = ev.target.value; });
   document.addEventListener('focusout', function () { if (pendingRender) setTimeout(function () { var a = document.activeElement; if (pendingRender && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) { pendingRender = false; render(); } }, 0); });
   document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible' && S && !S.demo && Date.now() - lastQuoteAt >= 30000) refreshQuote();
+    if (document.visibilityState === 'visible' && S && !S.demo && Date.now() - lastQuoteAt >= 30000) refreshAll();
   });
+  window.addEventListener('online', function () { if (S && !S.demo) refreshAll(); });
 
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-act]'); if (!el) return;
     var a = el.getAttribute('data-act');
     if (a === 'price' || a === 'check' || a === 'closesel' || a === 'notesel') return;       // handled on change
-    if (!(a === 'deltrade' || a === 'import' || a === 'reset') && U.armed) U.armed = '';
+    if (!(a === 'deltrade' || a === 'import' || a === 'reset' || a === 'clearsecret') && U.armed) U.armed = '';
     if (actions[a]) actions[a](el.getAttribute('data-v'), el);
   });
   document.addEventListener('change', function (ev) {
