@@ -76,14 +76,15 @@
     // Ask the browser not to evict our data under storage pressure.
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {}); } catch (e) {}
   }
-  function saveFile(name, text) {
+  function saveFile(name, text, type) {
+    type = type || 'application/json';
     var file;
-    try { file = new File([text], name, { type: 'application/json' }); } catch (e) { file = null; }
+    try { file = new File([text], name, { type: type }); } catch (e) { file = null; }
     // iOS home-screen apps: the share sheet offers "파일에 저장".
     if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
       return navigator.share({ files: [file], title: name });
     }
-    var url = URL.createObjectURL(new Blob([text], { type: 'application/json' })), a = document.createElement('a');
+    var url = URL.createObjectURL(new Blob([text], { type: type })), a = document.createElement('a');
     a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     return Promise.resolve();
@@ -237,7 +238,7 @@
     tasks.forEach(function (x) {
       out += '<label class="task' + (x.done ? ' done' : '') + '"><input type="checkbox" data-act="check" data-v="' + m.n + ':' + x.key + '"' + (x.done ? ' checked' : '') + '><span class="t">' + esc(x.t) + '<small>' + short(x.from || x.d) + (x.from ? ' – ' + short(x.d) : '') + '까지</small></span>' + taskChip(x, today) + '</label>';
     });
-    out += '</div><p class="hint">이 앱은 푸시 알림을 보내지 못합니다. 아이폰 캘린더에 2주마다 반복 일정을 하나 만들어 두면 놓치지 않습니다.</p></section>';
+    out += '</div><button class="btn" data-act="ics">캘린더에 추가</button><p class="hint">저장할 캘린더로 \'네이버\'를 고르세요. 설정에서 시작일을 바꾸면 기존 일정을 지우고 다시 추가하세요.</p><p class="msg' + (U.msg.icsOk ? ' ok' : '') + '" id="ics-msg" role="status">' + esc(U.msg.ics || '') + '</p></section>';
     return out;
   }
 
@@ -397,6 +398,12 @@
       var tkChanged = f.ticker !== S.settings.ticker;
       S.settings = f; if (tkChanged) S.quote = null;
       setMsg('set', '저장했습니다. 모든 사이클을 다시 계산했습니다.', true); save(); render(); if (tkChanged) refreshAll();
+    },
+    ics: function () {
+      if (S.demo) { setMsg('ics', '예시 화면에서는 캘린더를 추가할 수 없습니다. 설정에서 먼저 시작하세요.'); return render(); }
+      var text;
+      try { text = buildIcs(S.settings, location.origin + location.pathname); } catch (e) { setMsg('ics', '캘린더 파일을 만들지 못했습니다.'); return render(); }
+      saveFile('vr-tracker-cycle.ics', text, 'text/calendar').then(function () { setMsg('ics', '캘린더 파일을 내보냈습니다.', true); render(); }).catch(function (e) { setMsg('ics', e && e.name === 'AbortError' ? '추가를 취소했습니다.' : '캘린더 파일을 만들지 못했습니다.'); render(); });
     },
     export: function () {
       var b = JSON.stringify(bodyOf(S), null, 1), name = 'vr-tracker-' + todayStr() + '.json';
