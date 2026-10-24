@@ -259,9 +259,9 @@
       var ended = rows.filter(function (r) { return cycleEnded(r, m.today); }).reverse(), cq = U.close || {};
       if (ended.length) {
         var sel = ended.some(function (r) { return r.n === U.closeSel; }) ? U.closeSel : ended[0].n;
-        var opts = '<div class="field"><label for="cp-n">종가 사이클</label><select id="cp-n">' + ended.map(function (r) { return '<option value="' + r.n + '"' + (r.n === sel ? ' selected' : '') + '>사이클 ' + r.n + '</option>'; }).join('') + '</select></div>';
+        var opts = '<div class="field"><label for="cp-n">종가 사이클</label><select id="cp-n" data-act="closesel">' + ended.map(function (r) { return '<option value="' + r.n + '"' + (r.n === sel ? ' selected' : '') + '>사이클 ' + r.n + '</option>'; }).join('') + '</select></div>';
         out += '<div class="grid2">' + opts + '<div class="field"><label>&nbsp;</label><button class="btn" data-act="refetchclose"' + (cq.busy ? ' disabled' : '') + '>' + (cq.busy ? '가져오는 중…' : '종가 다시 가져오기') + '</button></div></div>';
-        if (cq.reason) out += '<p class="hint">' + esc(REASON[cq.reason] || REASON.error) + ' 아래에 직접 입력할 수 있습니다.</p><div class="field"><label for="cp-px">그 사이클 마지막 종가($) <span class="chip hold">직접 입력</span></label><input id="cp-px" class="num" inputmode="decimal" placeholder="0.00"></div><button class="btn" data-act="closeprice">종가 저장</button>';
+        if (cq.reason) out += '<p class="hint">' + esc(REASON[cq.reason] || REASON.error) + ' 아래에 직접 입력할 수 있습니다.</p><div class="field"><label for="cp-px">그 사이클 마지막 종가($) <span class="chip hold">직접 입력</span></label><input id="cp-px" class="num" inputmode="decimal" placeholder="0.00" value="' + esc(U.closeTyped || '') + '"></div><button class="btn" data-act="closeprice">종가 저장</button>';
       }
       out += '<p class="msg' + (U.msg.cpOk ? ' ok' : '') + '" id="cp-msg" role="status">' + esc(U.msg.cp || '') + '</p>';
     }
@@ -381,8 +381,9 @@
       var n = parseInt(val('cp-n'), 10), p = num(val('cp-px')), row = buildLedger(S, n)[n - 1];
       if (S.demo) { U.msg.cp = '예시 화면에서는 저장되지 않습니다.'; U.msg.cpOk = false; return render(); }
       if (!(p > 0)) { U.closeSel = n; U.msg.cp = '종가를 0보다 크게 입력하세요.'; U.msg.cpOk = false; return render(); }
-      U.closeSel = n; S.prices[n] = p; S.closeMeta[n] = { date: row.end, source: 'manual' }; U.msg.cp = '사이클 ' + n + ' 종가를 저장했습니다.'; U.msg.cpOk = true; save(); render();
+      U.closeSel = n; S.prices[n] = p; U.closeTyped = ''; S.closeMeta[n] = { date: row.end, source: 'manual' }; U.msg.cp = '사이클 ' + n + ' 종가를 저장했습니다.'; U.msg.cpOk = true; save(); render();
     },
+    closesel: function (v, el) { U.closeSel = parseInt(el.value, 10); },
     refreshquote: function () { refreshQuote(); },
     refetchclose: function () { var n = parseInt(val('cp-n'), 10); U.closeSel = n; U.msg.cp = ''; fillCloses(n); },
     mode: function (v) {
@@ -457,46 +458,53 @@
   }
   var pendingRender = false;
   function fetchFn() { return window.fetch.bind(window); }
+  var quoteReq = null, closeReq = null;   // in-flight requests; a newer one (other ticker) supersedes the older
   function refreshQuote() {
     if (!S || S.demo || !window.VRNet) return Promise.resolve();
-    if (U.quote && U.quote.busy) return Promise.resolve();
     var tk = S.settings.ticker || 'TQQQ';
-    U.quote = { busy: true }; lastQuoteAt = Date.now(); softRender();
-    return window.VRNet.fetchQuote(secrets().tdKey, tk, fetchFn()).then(function (r) {
-      if (!S || S.demo || (S.settings.ticker || 'TQQQ') !== tk) { U.quote = {}; return; }
-      if (r.ok) { S.quote = { price: r.price, at: r.at || null, source: 'api' }; U.quote = {}; save(); } else U.quote = { reason: r.reason };
-      softRender();
-    }, function () { U.quote = { reason: 'error' }; softRender(); });
+    if (quoteReq && quoteReq.tk === tk) return quoteReq.p;
+    var mine = { tk: tk };
+    quoteReq = mine; U.quote = { busy: true }; lastQuoteAt = Date.now(); softRender();
+    function done(fn) { if (quoteReq !== mine) return; quoteReq = null; if (!S || S.demo || (S.settings.ticker || 'TQQQ') !== tk) { U.quote = {}; softRender(); return; } fn(); softRender(); }
+    mine.p = window.VRNet.fetchQuote(secrets().tdKey, tk, fetchFn()).then(function (r) {
+      done(function () { if (r.ok) { S.quote = { price: r.price, at: r.at || null, source: 'api' }; U.quote = {}; save(); } else U.quote = { reason: r.reason }; });
+    }).catch(function () { done(function () { U.quote = { reason: 'error' }; }); });
+    return mine.p;
   }
   // force: a cycle number to refetch even if it already has an api close.
   function fillCloses(force) {
     if (!S || S.demo || !window.VRNet) return Promise.resolve();
-    if (U.close && U.close.busy) return Promise.resolve();
-    var s = S.settings, today = todayStr(), tk = s.ticker || 'TQQQ';
-    if (today < s.startDate) return Promise.resolve();
-    var rows = buildLedger(S, cycleIndexFor(s.startDate, today));
+    var s0 = S.settings, today = todayStr(), tk = s0.ticker || 'TQQQ', key = tk + ':' + force;
+    if (closeReq && closeReq.key === key) return closeReq.p;
+    if (today < s0.startDate) return Promise.resolve();
+    var rows = buildLedger(S, cycleIndexFor(s0.startDate, today));
     var targets = rows.filter(function (r) {
       if (!cycleEnded(r, today)) return false;
       var cm = S.closeMeta[r.n];
       return r.n === force || !(S.prices[r.n] > 0) || (cm && cm.source === 'manual');
     });
-    if (!targets.length) { U.close = {}; softRender(); return Promise.resolve(); }
+    if (!targets.length) { closeReq = null; U.close = {}; softRender(); return Promise.resolve(); }
     var start = targets.reduce(function (a, r) { return r.start < a ? r.start : a; }, targets[0].start);
-    U.close = { busy: true }; softRender();
-    return window.VRNet.fetchDailyBars(secrets().tdKey, tk, start, today, fetchFn()).then(function (r) {
-      if (!S || S.demo) { U.close = {}; return; }
-      if (!r.ok) { U.close = { reason: r.reason }; return softRender(); }
-      var got = window.pickCycleCloses(targets, r.bars, today), miss = false;
-      targets.forEach(function (t) {
-        var g = got[t.n];
-        if (g) { S.prices[t.n] = g.price; S.closeMeta[t.n] = { date: g.date, source: 'api' }; }
-        else if (!(S.prices[t.n] > 0)) miss = true;
+    var mine = { key: key };
+    closeReq = mine; U.close = { busy: true }; softRender();
+    function done(fn) { if (closeReq !== mine) return; closeReq = null; if (!S || S.demo || (S.settings.ticker || 'TQQQ') !== tk) { U.close = {}; softRender(); return; } fn(); softRender(); }
+    mine.p = window.VRNet.fetchDailyBars(secrets().tdKey, tk, start, today, fetchFn()).then(function (r) {
+      done(function () {
+        if (!r.ok) { U.close = { reason: r.reason }; return; }
+        var got = window.pickCycleCloses(targets, r.bars, today), miss = false;
+        targets.forEach(function (t) {
+          var g = got[t.n];
+          if (g) { S.prices[t.n] = g.price; S.closeMeta[t.n] = { date: g.date, source: 'api' }; }
+          else if (!(S.prices[t.n] > 0)) miss = true;
+        });
+        U.close = miss ? { reason: 'error' } : {};
+        save();
       });
-      U.close = miss ? { reason: 'error' } : {};
-      save(); softRender();
-    }, function () { U.close = { reason: 'error' }; softRender(); });
+    }).catch(function () { done(function () { U.close = { reason: 'error' }; }); });
+    return mine.p;
   }
   function refreshAll() { return refreshQuote().then(function () { return fillCloses(); }); }
+  document.addEventListener('input', function (ev) { if (ev.target && ev.target.id === 'cp-px') U.closeTyped = ev.target.value; });
   document.addEventListener('focusout', function () { if (pendingRender) setTimeout(function () { var a = document.activeElement; if (pendingRender && !(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName))) { pendingRender = false; render(); } }, 0); });
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && S && !S.demo && Date.now() - lastQuoteAt >= 30000) refreshQuote();
@@ -505,14 +513,14 @@
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-act]'); if (!el) return;
     var a = el.getAttribute('data-act');
-    if (a === 'price' || a === 'check') return;       // handled on change
+    if (a === 'price' || a === 'check' || a === 'closesel') return;       // handled on change
     if (!(a === 'deltrade' || a === 'import' || a === 'reset') && U.armed) U.armed = '';
     if (actions[a]) actions[a](el.getAttribute('data-v'), el);
   });
   document.addEventListener('change', function (ev) {
     var el = ev.target.closest('[data-act]'); if (!el) return;
     var a = el.getAttribute('data-act');
-    if (a === 'price' || a === 'check') actions[a](el.getAttribute('data-v'), el);
+    if (a === 'price' || a === 'check' || a === 'closesel') actions[a](el.getAttribute('data-v'), el);
   });
 
   /* ---------- boot ---------- */
