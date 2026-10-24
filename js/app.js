@@ -267,6 +267,7 @@
       out += '<p class="msg' + (U.msg.cpOk ? ' ok' : '') + '" id="cp-msg" role="status">' + esc(U.msg.cp || '') + '</p>';
     }
     out += '</section>';
+    out += viewSend(m, rows);
     // trade list
     var byC = {}; S.trades.forEach(function (t) { var n = cycleIndexFor(s.startDate, t.date); (byC[n] = byC[n] || []).push(t); });
     var keys = Object.keys(byC).map(Number).sort(function (a, b) { return b - a; });
@@ -281,6 +282,20 @@
       });
     });
     return out + '</section>';
+  }
+
+  function viewSend(m, rows) {
+    var ended = rows.filter(function (r) { return cycleEnded(r, m.today); }).reverse(), us = U.send || {}, sc = secrets();
+    var sel = ended.some(function (r) { return r.n === U.noteSel; }) ? U.noteSel : (ended.length ? (ended.filter(function (r) { return S.prices[r.n] > 0; })[0] || ended[0]).n : 0);
+    var why = S.demo ? '데모 화면에서는 보낼 수 없습니다. 내 기록을 시작한 뒤 이용하세요.' : !sc.ghToken ? '설정에서 GitHub 토큰을 넣으세요' : !(sel && S.prices[sel] > 0) ? '사이클이 끝나고 종가가 채워지면 보낼 수 있습니다' : '';
+    var opts = ended.length ? '<div class="field"><label for="nt-n">보낼 사이클</label><select id="nt-n" data-act="notesel">' + ended.map(function (r) { return '<option value="' + r.n + '"' + (r.n === sel ? ' selected' : '') + '>사이클 ' + r.n + '</option>'; }).join('') + '</select></div>' : '';
+    var ex = sel && S.exported && S.exported[sel], exd = ex && ex.at ? new Date(ex.at) : null;
+    var mark = exd && isFinite(exd.getTime()) ? '<span class="chip">보냄 · ' + (exd.getMonth() + 1) + '/' + exd.getDate() + '</span>' : '';
+    var disabled = !!why || us.busy;
+    return '<section class="card"><h2>Obsidian으로 보내기</h2>' + opts
+      + '<div style="display:flex;gap:10px;align-items:center;justify-content:space-between"><button class="btn primary" data-act="sendnote"' + (disabled ? ' disabled' : '') + '>' + (us.busy ? '보내는 중…' : 'Obsidian으로 보내기') + '</button>' + mark + '</div>'
+      + (why ? '<p class="hint">' + esc(why) + '</p>' : '')
+      + '<p class="msg' + (U.msg.sendOk ? ' ok' : '') + '" id="nt-msg" role="status">' + esc(U.msg.send || '') + '</p></section>';
   }
 
   function viewChart() {
@@ -348,6 +363,7 @@
   /* ---------- actions ---------- */
   function val(id) { var e = document.getElementById(id); return e ? e.value : ''; }
   function setMsg(k, text, ok) { U.msg[k] = text; U.msg[k + 'Ok'] = !!ok; }
+  var sendReq = null, SEND_REASON = { auth: '토큰 권한을 확인하세요.', norepo: '저장소 이름을 확인하세요.', offline: '오프라인입니다.', nokey: '설정에서 GitHub 토큰을 넣으세요.', error: '보내지 못했습니다.' };
   var actions = {
     tab: function (v) { U.tab = v; U.armed = ''; render(); window.scrollTo(0, 0); },
     side: function (v) {
@@ -383,6 +399,33 @@
       if (S.demo) { U.msg.cp = '예시 화면에서는 저장되지 않습니다.'; U.msg.cpOk = false; return render(); }
       if (!(p > 0)) { U.closeSel = n; U.msg.cp = '종가를 0보다 크게 입력하세요.'; U.msg.cpOk = false; return render(); }
       U.closeSel = n; S.prices[n] = p; U.closeTyped = ''; S.closeMeta[n] = { date: row.end, source: 'manual' }; U.msg.cp = '사이클 ' + n + ' 종가를 저장했습니다.'; U.msg.cpOk = true; save(); render();
+    },
+    notesel: function (v, el) { U.noteSel = parseInt(el.value, 10); U.msg.send = ''; render(); },
+    sendnote: function () {
+      if (S.demo || (U.send && U.send.busy)) return;
+      var m = model(), s = m.s, sc = secrets(), n = parseInt(val('nt-n'), 10), row = null;
+      m.rows.forEach(function (r) { if (r.n === n) row = r; });
+      if (!(row && cycleEnded(row, m.today) && S.prices[n] > 0 && sc.ghToken)) return;
+      U.noteSel = n; U.msg.send = ''; U.msg.sendOk = false;
+      var trades = S.trades.filter(function (t) { return cycleIndexFor(s.startDate, t.date) === n; }).map(function (t) {
+        return { id: t.id, date: t.date, side: t.side, qty: Number(t.qty), price: Number(t.price), memo: t.memo };
+      });
+      var cm = S.closeMeta && S.closeMeta[n], note;
+      try { note = cycleNote(row, trades, { price: Number(S.prices[n]), date: cm && cm.date ? cm.date : row.end }, s.ticker || 'TQQQ'); }
+      catch (e) { U.msg.send = '보내지 못했습니다.'; return render(); }
+      var mine = (sendReq = {});
+      U.send = { busy: true }; softRender();
+      function done(msg, ok) { if (sendReq !== mine) return; U.send = {}; U.msg.send = msg; U.msg.sendOk = ok; render(); }
+      function fail() { done('보내지 못했습니다.', false); }
+      function ok(r) {
+        try {
+          if (r && r.ok) { S.exported = S.exported || {}; S.exported[n] = { at: new Date().toISOString() }; save(); done('사이클 ' + n + ' 노트를 보냈습니다.', true); }
+          else done(SEND_REASON[r && r.reason] || SEND_REASON.error, false);
+        } catch (e) { fail(); }
+      }
+      try {
+        VRNet.putVaultFile({ token: sc.ghToken, repo: sc.repo, branch: sc.branch }, sc.folder + '/' + noteFileName(n), note, 'VR 사이클 ' + n + ' 기록', window.fetch.bind(window)).then(ok).catch(fail);
+      } catch (e) { fail(); }
     },
     closesel: function (v, el) { U.closeSel = parseInt(el.value, 10); },
     refreshquote: function () { refreshQuote(); },
@@ -520,14 +563,14 @@
   document.addEventListener('click', function (ev) {
     var el = ev.target.closest('[data-act]'); if (!el) return;
     var a = el.getAttribute('data-act');
-    if (a === 'price' || a === 'check' || a === 'closesel') return;       // handled on change
+    if (a === 'price' || a === 'check' || a === 'closesel' || a === 'notesel') return;       // handled on change
     if (!(a === 'deltrade' || a === 'import' || a === 'reset') && U.armed) U.armed = '';
     if (actions[a]) actions[a](el.getAttribute('data-v'), el);
   });
   document.addEventListener('change', function (ev) {
     var el = ev.target.closest('[data-act]'); if (!el) return;
     var a = el.getAttribute('data-act');
-    if (a === 'price' || a === 'check' || a === 'closesel') actions[a](el.getAttribute('data-v'), el);
+    if (a === 'price' || a === 'check' || a === 'closesel' || a === 'notesel') actions[a](el.getAttribute('data-v'), el);
   });
 
   /* ---------- boot ---------- */
