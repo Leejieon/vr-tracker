@@ -97,5 +97,43 @@ function pickCycleCloses(rows, bars, today) {
   return out;
 }
 
-if (typeof module !== "undefined") module.exports = { parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, cycleIndexFor: cycleIndexFor, cycleStartDate: cycleStartDate, modeDefaults: modeDefaults, buildLedger: buildLedger, buyLadder: buyLadder, sellLadder: sellLadder, zoneFor: zoneFor, TASK_OFFSET: TASK_OFFSET, cycleEnded: cycleEnded, pickCycleCloses: pickCycleCloses };
+// --- iCalendar export (RFC 5545) ---
+function icsEscape(t) {
+  return String(t).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+function icsFold(line) {
+  var out = [], cur = "", bytes = 0, limit = 75, chars = Array.from(line);
+  for (var i = 0; i < chars.length; i++) {
+    var n = chars[i].length === 1 && chars[i].charCodeAt(0) < 0x80 ? 1 : encodeURIComponent(chars[i]).replace(/%[0-9A-F]{2}/g, "x").length;
+    if (bytes + n > limit) { out.push(cur); cur = " "; bytes = 1; limit = 75; }
+    cur += chars[i]; bytes += n;
+  }
+  out.push(cur);
+  return out;
+}
+function buildIcs(settings, appUrl) {
+  var host = (/^https?:\/\/([^\/]+)/.exec(appUrl) || [])[1] || "vr-tracker";
+  var calc = "VR 새 V값 확인" + (settings.mode === "accumulate" ? " · 적립금 입금" : settings.mode === "withdraw" ? " · 인출금 반영" : "");
+  var head = "종목: " + settings.ticker + "\n";
+  var events = [
+    { key: "record", off: TASK_OFFSET.record, summary: "VR 체결 내역 기록", desc: head + "사이클 체결 내역을 앱에 기록하세요." },
+    { key: "calc", off: TASK_OFFSET.calc, summary: calc, desc: head + "새 사이클의 V값을 확인하세요." },
+    { key: "order", off: TASK_OFFSET.orderFrom, summary: "VR 예약 주문 (매수·매도)", desc: head + "사이클 14일째(다음 사이클 시작일)까지 주문을 걸어 두세요." }
+  ];
+  var stamp = new Date(Date.now()).toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z");
+  var L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//leejieon//VR Tracker//KO", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+    "BEGIN:VTIMEZONE", "TZID:Asia/Seoul", "BEGIN:STANDARD", "DTSTART:19700101T000000", "TZOFFSETFROM:+0900", "TZOFFSETTO:+0900", "TZNAME:KST", "END:STANDARD", "END:VTIMEZONE"];
+  events.forEach(function (e) {
+    var d = addDays(settings.startDate, e.off).replace(/-/g, "");
+    L.push("BEGIN:VEVENT", "UID:vr-" + e.key + "-" + settings.startDate + "@" + host, "DTSTAMP:" + stamp,
+      "DTSTART;TZID=Asia/Seoul:" + d + "T080000", "DTEND;TZID=Asia/Seoul:" + d + "T083000",
+      "RRULE:FREQ=WEEKLY;INTERVAL=2", "SUMMARY:" + icsEscape(e.summary),
+      "DESCRIPTION:" + icsEscape(e.desc + "\n" + appUrl),
+      "BEGIN:VALARM", "ACTION:DISPLAY", "DESCRIPTION:" + icsEscape(e.summary), "TRIGGER:PT0M", "END:VALARM", "END:VEVENT");
+  });
+  L.push("END:VCALENDAR");
+  return L.reduce(function (a, l) { return a.concat(icsFold(l)); }, []).join("\r\n") + "\r\n";
+}
+
+if (typeof module !== "undefined") module.exports = { parseDate: parseDate, fmtDate: fmtDate, addDays: addDays, cycleIndexFor: cycleIndexFor, cycleStartDate: cycleStartDate, modeDefaults: modeDefaults, buildLedger: buildLedger, buyLadder: buyLadder, sellLadder: sellLadder, zoneFor: zoneFor, TASK_OFFSET: TASK_OFFSET, cycleEnded: cycleEnded, pickCycleCloses: pickCycleCloses, buildIcs: buildIcs };
 

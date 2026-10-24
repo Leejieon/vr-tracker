@@ -91,3 +91,26 @@ test('pickCycleCloses leaves a cycle without bars empty', function () {
   var rows = vr.buildLedger(state(), 2);
   assert.deepStrictEqual(vr.pickCycleCloses(rows, [{ date: '2026-01-30', close: 55 }], '2026-02-04'), { 2: { price: 55, date: '2026-01-30' } });
 });
+
+test('buildIcs makes three biweekly 8am events with alarms', function () {
+  var ics = vr.buildIcs(state().settings, 'https://leejieon.github.io/vr-tracker/');
+  var lines = ics.split('\r\n');
+  assert.strictEqual(lines[0], 'BEGIN:VCALENDAR');
+  assert.strictEqual(ics.match(/BEGIN:VEVENT/g).length, 3);
+  assert.strictEqual(ics.match(/RRULE:FREQ=WEEKLY;INTERVAL=2/g).length, 3);
+  assert.ok(lines.indexOf('DTSTART;TZID=Asia/Seoul:20260116T080000') >= 0);   // 01-05 + 11
+  assert.ok(lines.indexOf('DTEND;TZID=Asia/Seoul:20260116T083000') >= 0);
+  assert.ok(lines.indexOf('DTSTART;TZID=Asia/Seoul:20260117T080000') >= 0);   // +12
+  assert.ok(lines.indexOf('UID:vr-record-2026-01-05@leejieon.github.io') >= 0);
+  assert.ok(lines.indexOf('SUMMARY:VR 새 V값 확인 · 적립금 입금') >= 0);
+  assert.strictEqual(ics.match(/TRIGGER:PT0M/g).length, 3);
+  assert.ok(lines.every(function (l) { return Buffer.byteLength(l) <= 75; }));
+});
+test('buildIcs: lump mode has no cash suffix, withdraw says 인출금', function () {
+  assert.ok(vr.buildIcs(state({ mode: 'lump' }).settings, 'x').indexOf('SUMMARY:VR 새 V값 확인\r\n') >= 0);
+  assert.ok(vr.buildIcs(state({ mode: 'withdraw' }).settings, 'x').indexOf('인출금 반영') >= 0);
+});
+test('buildIcs escapes commas and semicolons', function () {
+  var ics = vr.buildIcs(state({ ticker: 'A,B;C' }).settings, 'x');
+  assert.ok(ics.indexOf('A\\,B\\;C') >= 0);
+});
