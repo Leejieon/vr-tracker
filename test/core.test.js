@@ -134,3 +134,12 @@ test('cycleNote without trades says so', function () {
   assert.ok(vr.cycleNote(row, [], { price: 50, date: '2026-01-16' }, 'TQQQ').indexOf('체결 없음') >= 0);
 });
 test('noteFileName', function () { assert.strictEqual(vr.noteFileName(5), 'VR 사이클 5.md'); });
+test('cycleNote escapes backslash before pipe in memo', function () {
+  var st = state();
+  st.trades.push({ date: '2026-01-07', side: 'buy', qty: 1, price: 80, memo: 'a\\|b' });
+  var row = vr.buildLedger(st, 1)[0];
+  var md = vr.cycleNote(row, st.trades, { price: 85.5, date: '2026-01-16' }, 'TQQQ');
+  var line = md.split('\n').filter(function (l) { return l.indexOf('| 2026-01-07 |') === 0; })[0];
+  assert.ok(line.indexOf('| a\\\\\\|b |') >= 0);
+  assert.strictEqual(line.replace(/\\./g, '').split('|').length - 1, 7);
+});

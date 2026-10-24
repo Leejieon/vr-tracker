@@ -152,7 +152,7 @@ function cycleNote(row, trades, close, ticker) {
   } else {
     out.push("| 날짜 | 구분 | 수량 | 가격 | 금액 | 메모 |", "|---|---|---|---|---|---|");
     sorted.forEach(function (t) {
-      var memo = String(t.memo || "").replace(/\r?\n/g, " ").replace(/\|/g, "\\|");
+      var memo = String(t.memo || "").replace(/\r?\n/g, " ").replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
       out.push("| " + t.date + " | " + (t.side === "buy" ? "매수" : "매도") + " | " + t.qty + " | " + t.price.toFixed(2) + " | " + (t.qty * t.price).toFixed(2) + " | " + memo + " |");
     });
   }
