@@ -159,3 +159,16 @@ nav.tabs button[aria-current="page"] { background: var(--accent-soft); color: va
 .refresh { flex: none; min-width: 44px; }
 .field > .hint { margin: 0; }
 .pxtext .asof { display: block; font-size: 12px; color: var(--muted); }
+
+/* Trade list grouped per cycle, each group collapsible. */
+.cycle-group { border-bottom: 1px solid var(--line); }
+.cycle-group:last-child { border-bottom: 0; }
+.cycle-group > summary { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 10px 0; margin: 0; list-style: none; min-height: 44px; }
+.cycle-group > summary::-webkit-details-marker { display: none; }
+.cycle-group > summary::before { content: "▸"; color: var(--muted); margin-right: 6px; }
+.cycle-group[open] > summary::before { content: "▾"; }
+.cycle-group > summary > span:first-child { flex: 1; }
+.cycle-group .trade:last-child { border-bottom: 0; }
+
+/* iOS Safari gives date inputs an intrinsic width; let them shrink to their column. */
+.field input[type="date"] { -webkit-appearance: none; appearance: none; min-width: 0; display: block; }
