@@ -465,7 +465,7 @@
     if (quoteReq && quoteReq.tk === tk) return quoteReq.p;
     var mine = { tk: tk };
     quoteReq = mine; U.quote = { busy: true }; lastQuoteAt = Date.now(); softRender();
-    function done(fn) { if (quoteReq !== mine) return; quoteReq = null; if (!S || S.demo || (S.settings.ticker || 'TQQQ') !== tk) { U.quote = {}; softRender(); return; } fn(); softRender(); }
+    function done(fn) { if (quoteReq !== mine) return; quoteReq = null; if (!S || S.demo || (S.settings.ticker || 'TQQQ') !== tk) { U.quote = {}; softRender(); return; } try { fn(); } catch (e) { U.quote = { reason: 'error' }; } softRender(); }
     mine.p = window.VRNet.fetchQuote(secrets().tdKey, tk, fetchFn()).then(function (r) {
       done(function () { if (r.ok) { S.quote = { price: r.price, at: r.at || null, source: 'api' }; U.quote = {}; save(); } else U.quote = { reason: r.reason }; });
     }).catch(function () { done(function () { U.quote = { reason: 'error' }; }); });
@@ -487,7 +487,7 @@
     var start = targets.reduce(function (a, r) { return r.start < a ? r.start : a; }, targets[0].start);
     var mine = { key: key };
     closeReq = mine; U.close = { busy: true }; softRender();
-    function done(fn) { if (closeReq !== mine) return; closeReq = null; if (!S || S.demo || (S.settings.ticker || 'TQQQ') !== tk) { U.close = {}; softRender(); return; } fn(); softRender(); }
+    function done(fn) { if (closeReq !== mine) return; closeReq = null; if (!S || S.demo || (S.settings.ticker || 'TQQQ') !== tk) { U.close = {}; softRender(); return; } try { fn(); } catch (e) { U.close = { reason: 'error' }; } softRender(); }
     mine.p = window.VRNet.fetchDailyBars(secrets().tdKey, tk, start, today, fetchFn()).then(function (r) {
       done(function () {
         if (!r.ok) { U.close = { reason: r.reason }; return; }
